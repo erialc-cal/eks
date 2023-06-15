@@ -12,6 +12,9 @@ from scipy.optimize import *
 np.random.seed(123)
 
 
+
+### HELPER FUNCTIONS ###
+
 def hessian(y, mu0, A, B, invD, invE, f = None, df = None, df2 = None, compressed=False):
     """ Calculates hessian for log p(Q|Y)
         obs : y_t|q_t = f(q_t)+ N(0, D) if linear, f(q) = B*q if not df = f'(q), df2 = f''(q)
@@ -43,13 +46,13 @@ def hessian(y, mu0, A, B, invD, invE, f = None, df = None, df2 = None, compresse
     
     if f == None: 
         # linear observation map
-        H[:r, :r] = - (B.T @ invD @ B + A.T @ invE @ A + invE)
-        H[r:2*r, r:2*r] = - (B.T @ invD @ B + A.T @ invE @ A + invE)
+        H[:r, :r] =  (B.T @ invD @ B + A.T @ invE @ A + invE)
+        H[r:2*r, r:2*r] =  (B.T @ invD @ B + A.T @ invE @ A + invE)
     else:
-        H[:r, :r] = - (df2.T @ invD @ (f - y)+ df.T @ invD @ df)
-        H[r:2*r, r:2*r] = - (df2.T @ invD @ (f - y)+ df.T @ invD @ df)
-    H[:r, r:2*r] = A.T @ invE
-    H[r:2*r, :r] = (A.T @ invE).T  
+        H[:r, :r] = (df2.T @ invD @ (f - y)+ df.T @ invD @ df)
+        H[r:2*r, r:2*r] = (df2.T @ invD @ (f - y)+ df.T @ invD @ df)
+    H[:r, r:2*r] = - A.T @ invE
+    H[r:2*r, :r] = -(A.T @ invE).T  
     if compressed == True:
         return H
     else :
@@ -62,107 +65,126 @@ def hessian(y, mu0, A, B, invD, invE, f = None, df = None, df2 = None, compresse
         print("Full matrix of size T by T")
         return bigH
     
+
+
+
+
+def schur_diag(H,k,l):
+    """ Schur inversion lemma diagonal blocks 
     
+    We need to invert H = ([A,B],[C,D]) with square blocks A of dimension k by k
+    and D of dimension l by l and extract the inverted matrix's diagonal blocks 
+    using Schur complement D'=(D-CA^{-1}B)^{-1}
     
+    Trick: Computationally less expensive use Woodbury's lemma 
+    (D-CA^{-1}B)^{-1} = D^{-1} + D^{-1}C(A -BD^{-1}C)^{-1}BD^{-1}
     
-def gradient(y, mu0, S0, q, A, B, invE, invD, f = None, df = None, df2 = None):
-    """ Calculates hessian for log p(Q|Y)
-    Linear is assumed as default, if non linear observation map, use f, df, df2
-    
-    Args:
-        y: np.ndarray
-            shape (n_samples, n_keypoints)
-        mu0: np.ndarray
-            shape (n_latents)
-        q : np.ndarray -- latent variables obtained from mu0 and our Markov chain
-            shape (n_latents, n_samples)
-        A: np.ndarray
-            shape (n_latents, n_latents)
-        B: np.ndarray
-            shape (n_keypoints, n_latents)
-        invD: np.ndarray
-            shape (n_keypoints, n_keypoints)
-        invE: np.ndarray
-            shape (n_latents, n_latents)
-        f: np.ndarray
-            shape (n_samples, n_keypoints)
-        df: np.ndarray
-            shape (n_samples, n_keypoints)
-        df2: np.ndarray
-            shape (n_samples, n_keypoints)
-     """ 
-
-    T = y.shape[0]
-    r = mu0.shape[0]
-    G = np.zeros(shape=(T, r))
-
-    for i in range(1,T-1):
-        if f == None:
-            # linear map
-            G[i,:] = - invE @(q[:,i] - A@q[:,i-1])+ A.T @ invE @(q[:,i+1]-A@q[:,i]) + B.T @ invD @ (y[i,:] - B @ q[:,i])
-        else :
-            G[i,:] = - invE @(q[:,i] - A@q[:,i-1])+ A.T @ invE @(q[:,i+1]-A@q[:,i]) + df.T @ invD @ (f[:,i]-q[:,i])
-    # Boundary condition
-    G[0, :] = A.T @ invE @ (q[:,1]-A@q[:,0])
-    G[T-1,:] =  - invE @(q[:,T-1] - A@q[:,T-2])+ A.T @ invE @(-A@q[:,T-1]) + B.T @ invD @ (y[T-1,:] - B @ q[:,T-1])
-    return G
-
-
-
-
-
-def obj_loglikelihood(y,q, invE, invD, A, B, f= None):
-    """ 
-    Maximising loglikelihood in linear case
-    
-    hat{Q} = argmax_q log p(Q|O) = argmax_Q log p(Q) + log p(O|Q)
-    with log p(Q) = -frac{1}{2} sum_{tk} (q_{tk} - q_{t+1,k})^T E_k^{-1} (q_{tk} - q_{t+1,k}) 
-    and log p(O|Q) =-frac{1}{2} sum_{tkv} (f_{v}(q_{tk}) - O_{tkv})^T D_{tkv}^{-1} (f_v(q_{tk}) - O_{tkv})
-       Args:
-        y: np.ndarray
-            shape (n_samples, n_keypoints)
-        q: np.ndarray
-            shape (n_latents)
-        A: np.ndarray
-            shape (n_latents, n_latents)
-        B: np.ndarray
-            shape (n_keypoints, n_latents)
-        invD: np.ndarray
-            shape (n_keypoints, n_keypoints)
-        invE: np.ndarray
-            shape (n_latents, n_latents)
+    H: np.ndarray -- Matrix of interest
+        shape (k+l, k+l)
+    k: int64 -- gives the top left block's dimensions
+    l: int64 -- gives the bottom left block's dimensions
     """
-    T = y.shape[0]
-    
-    if f == None:
-        diffq = np.sum(q[:,1:]-A@q[:,:T-1],axis=1)+ q[:,0]
-        diffo = np.sum(y.T - B@q, axis=1)
-        #print(diffo)
-    else:
-        diffq = np.sum(q[:,1:]-A@q[:,:T-1],axis=1)+ q[:,0]
-        diffo = np.sum(y.T - f, axis=1)
-    loglikelihood = - 0.5*(diffq.T @ invE @ diffq) - 0.5*(diffo.T @ invD @ diffo) 
-    return loglikelihood
 
+    assert H.shape[0] == k+l
+    M = np.zeros((k+l,k+l))
+    A = H[:k,:k]
+    D = H[k:k+l,k:k+l]
+    B = H[:k,k:k+l]
+    C = H[k:k+l, :k]
+    invD = np.linalg.inv(D)
+    #print(A-B@invD@C)
+    if (np.linalg.matrix_rank(A - B@invD@C)== np.linalg.matrix_rank(A)):
+        M[:k,:k] = np.linalg.inv(A-B@invD@C)
+        M[k:k+l,k:k+l] = invD+invD@C@M[:k,:k]@B@invD
+  
+        return M
+    else:
+        print("Singular matrix")
 
 ####### M A I N #########
 
-def newton_linear(y,mu0, S0, q, A, B, invE, invD, max_iter=1000, eps = 0.01):
-    H_1 = np.linalg.inv(hessian(y, mu0, A, B, invD, invE))
-    old = q.T
-    loss = [obj_loglikelihood(y, old.T, invE, invD, A, B)]
-    
-    for it in tqdm.tqdm(range(max_iter)):
-        G = gradient(y, mu0, S0, old.T, A, B, invE, invD)
 
-        new = old - H_1@ G
-        obj = obj_loglikelihood(y,new.T,invE,invD, A, B)
-        loss.append(obj)
-        if np.linalg.norm(new - old) < eps:
-            print("Local maximum reached before maximum iterations reached")
-            break
-            return old 
-        else:
-            old = new
+def kalman_newton_greedy(y, mu0, A, B, D, E, f = None, df = None,df2 = None):
+    """
+    One-pass Kalman recursive method described in J. Humphrey et J. West, "Kalman filtering with Newton's method" 
+    https://math.byu.edu/~jeffh/publications/papers/HW.pdf 
+    
+    
+    """
+    r = mu0.shape[0]
+    T = y.shape[0]
+    
+    invE = np.linalg.inv(E)
+    invD = np.linalg.inv(D)
+    grad_z = dict.fromkeys(range(0, T))
+    q = np.zeros((T,r))
+    q[0,:] = mu0
+
+
+    if f == None:
+        print("Linear solve...")
+        
+        H = hessian(y, mu0, A, B, invD, invE, compressed=True)
+        
+        P = schur_diag(H,r,r)[r:2*r, r:2*r] # select bottom right block
+        for t in tqdm.tqdm(range(1,T-1)):
+           # z[t,:] = np.vstack([z[t-1,:], A@q[t-1,:]]) 
+           # grad_z[t] = np.vstack([0, B.T@invD@(B@A@q[t,:]-y[t,:])])
+           # Newton step : z = z - (H_new)^{-1} grad_z 
+           # print(q[t,:].shape, P.shape, B.T.shape)
+            q[t,:] = A@q[t-1,:]-P@B.T@invD@(B@A@q[t-1,:]-y[t,:])   
+
+            F = np.hstack([np.zeros((3, 3*t)),A.T])
+            # print((H + F.T @invE @ F).shape, (F.T @ invE).shape, (B.T@invD@B).shape)
+            H = np.block([[H + F.T @invE @ F, - F.T @ invE],[-( F.T @ invE).T , invE + B.T @ invD @B]])
+
+            P = schur_diag(H, len(H)-r,r)[len(H)-r:, len(H)-r:]       
+
+        q[T-1,:] = A@q[T-2,:]-P@B.T@invD@(B@A@q[T-2,:]-y[T-1,:])  
+    else: 
+        # to be done, gradient is less straightforward
+    return q
+    
+
+
+
+    
+def kalman_newton_recursive(y, mu0, A, B, D, E, f = None, df = None,df2 = None):
+    """
+    One-pass Kalman recursive method described in J. Humphrey et J. West, "Kalman filtering with Newton's method" 
+    https://math.byu.edu/~jeffh/publications/papers/HW.pdf 
+    
+    
+    """
+    r = mu0.shape[0]
+    T = y.shape[0]
+    
+    invE = np.linalg.inv(E)
+    invD = np.linalg.inv(D)
+    grad_z = dict.fromkeys(range(0, T))
+    q = np.zeros((T,r))
+    q[0,:] = mu0
+
+
+    if f == None:
+        print("Linear solve...")
+        
+        # H = hessian(y, mu0, A, B, invD, invE, compressed=True),r,r
+        P = schur_diag(hessian(y, mu0, A, B, invD, invE, compressed=True),r,r)[r:2*r, r:2*r] # select bottom right block
+        for t in tqdm.tqdm(range(1,T-1)):
+           # idea is to define z[t,:] = np.vstack([z[t-1,:], A@q[t-1,:]]) 
+           # so grad_z[t] = np.vstack([0, B.T@invD@(B@A@q[t,:]-y[t,:])])
+           # Newton step : z = z - (Hessian)^{-1} grad_z 
+           # where hessian is block tridiagonal 
+           # can be simplified using Schur, Woodbury and tridiagonal 
+           # structure to the following updates
+            q[t,:] = A@q[t-1,:]-P@B.T@invD@(B@A@q[t-1,:]-y[t,:])   
+
+            P = np.linalg.inv(np.linalg.inv(E+A@P@A.T)+B.T@D@B)
             
-    return new,loss
+        q[T-1,:] = A@q[T-2,:]-P@B.T@invD@(B@A@q[T-2,:]-y[T-1,:])  
+    #else: 
+        # to be done, gradient is less straightforward
+    return q
+    
+    
