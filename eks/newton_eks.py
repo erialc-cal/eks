@@ -15,7 +15,7 @@ np.random.seed(123)
 
 ### HELPER FUNCTIONS ###
 
-def hessian(y, mu0, A, B, invD, invE, f = None, df = None, df2 = None, compressed=False):
+def hessian(y, mu0, S0, A, B, invD, invE, f = None, df = None, df2 = None, compressed=False):
     """ Calculates hessian for log p(Q|Y)
         obs : y_t|q_t = f(q_t)+ N(0, D) if linear, f(q) = B*q if not df = f'(q), df2 = f''(q)
         latent : q_t|q_{t-1} = A*q_{t-1}+N(0,E)
@@ -41,18 +41,18 @@ def hessian(y, mu0, A, B, invD, invE, f = None, df = None, df2 = None, compresse
             shape (n_samples, n_keypoints)
      """ 
     T = y.shape[0]
-    r = m0.shape[0]
+    r = mu0.shape[0]
     H = np.zeros(shape=(2*r,2*r))  # Hessian should be a block tridiagonal matrix with T blocks of size r by r but we can store the submatrix of size 2*r by 2*r since Kalman equations are quadratic
     
     if f == None: 
         # linear observation map
         H[:r, :r] =  (B.T @ invD @ B + A.T @ invE @ A + invE)
-        H[r:2*r, r:2*r] =  (B.T @ invD @ B + A.T @ invE @ A + invE)
+        H[r:, r:] =  (B.T @ invD @ B + A.T @ invE @ A + invE)
     else:
         H[:r, :r] = (df2.T @ invD @ (f - y)+ df.T @ invD @ df)
-        H[r:2*r, r:2*r] = (df2.T @ invD @ (f - y)+ df.T @ invD @ df)
-    H[:r, r:2*r] = - A.T @ invE
-    H[r:2*r, :r] = -(A.T @ invE).T  
+        H[r:, r:] = (df2.T @ invD @ (f - y)+ df.T @ invD @ df)
+    H[:r, r:] = - A.T @ invE
+    H[r:, :r] = -(A.T @ invE).T  
     if compressed == True:
         return H
     else :
@@ -61,6 +61,7 @@ def hessian(y, mu0, A, B, invD, invE, f = None, df = None, df2 = None, compresse
             bigH[r*i:r*(i+1), r*i:r*(i+1)] = H[:r,:r] # diagonal 
             bigH[r*(i+1):r*(i+2), r*i:r*(i+1)] = H[:r,r:2*r] # superdiagonal
             bigH[r*i:r*(i+1), r*(i+1):3*(i+2)] = H[r:2*r,:r] # subdiagonal
+        bigH[:r,:r] = np.linalg.inv(S0)+ A.T@invE@A
         bigH[T-2*r:T,T-2*r:T] = H
         print("Full matrix of size T by T")
         return bigH
@@ -101,7 +102,61 @@ def schur_diag(H,k,l):
     else:
         print("Singular matrix")
 
-####### M A I N #########
+def block_tri_solve(A, b, N):
+    rows = A.shape[0]
+    cols = A.shape[1]
+    
+    assert rows%N == 0
+    
+    n_bl= rows//N
+    
+    b = b.reshape((N, n_bl))
+    
+    x = np.zeros((N, n_bl))
+    c = x
+    
+    # Diag
+    D = np.zeros((N,N, n_bl))
+    Q = D
+    G = D
+    
+    #subdiag
+    C = np.zeros((N,N, n_bl-1))
+    
+    # supdiag
+    B = C
+    
+    for k in range(1,n_bl-1):
+        # block = slice((k - 1) * N, k * N)
+        # print(A[(k-1)*N:k*N, (k-1)*N:k*N].shape, D[:,:,k].shape)
+        D[:,:,k] = A[(k-1)*N:k*N, (k-1)*N:k*N]
+        # print(A[k*N:(k+1)*N, (k-1)*N:k*N].shape, B[:,:,k].shape)
+        B[:,:,k] = A[k*N:(k+1)*N, (k-1)*N:k*N]
+        C[:,:,k] = A[(k-1)*N:k*N, k*N:(k+1)*N]
+    
+    D[:,:,n_bl-1] = A[(n_bl - 1) * N: n_bl * N, (n_bl - 1) * N: n_bl * N]
+    #print(Q.shape)
+    Q[:,:,0] = D[:,:,0]
+    G[:,:,0] = np.linalg.lstsq(Q[:,:,0],C[:,:,0])[0]
+    
+    for i in range(1, n_bl-1):
+        Q[:,:,k]=D[:,:,k]-B[:,:,k-1]@G[:,:,k-1]
+        G[:,:,k] = np.linalg.lstsq(Q[:,:,k], C[:,:,k])[0]
+        
+    Q[:,:,n_bl-1] = D[:,:,n_bl-1]-B[:,:,n_bl-2]@G[:,:,n_bl-2]
+    c[:,0] = np.linalg.lstsq(Q[:,:,0], b[:,1])[0]
+    
+    for k in range(1, n_bl):
+        c[:,k] = np.linalg.lstsq(Q[:,:,k],b[:,k]-B[:,:,k-1]@c[:,k-1])[0]
+    x[:,n_bl-1] = c[:,n_bl-1]
+    
+    for k in range(1, n_bl-1,-1):
+        x[:,k] = c[:,k]-G[:,:,k]@x[:,k+1]
+    return x
+    
+        
+        
+        ####### M A I N #########
 
 
 def kalman_newton_greedy(y, mu0, A, B, D, E, f = None, df = None,df2 = None):
@@ -141,7 +196,7 @@ def kalman_newton_greedy(y, mu0, A, B, D, E, f = None, df = None,df2 = None):
             P = schur_diag(H, len(H)-r,r)[len(H)-r:, len(H)-r:]       
 
         q[T-1,:] = A@q[T-2,:]-P@B.T@invD@(B@A@q[T-2,:]-y[T-1,:])  
-    else: 
+    #else: 
         # to be done, gradient is less straightforward
     return q
     
@@ -149,7 +204,7 @@ def kalman_newton_greedy(y, mu0, A, B, D, E, f = None, df = None,df2 = None):
 
 
     
-def kalman_newton_recursive(y, mu0, A, B, D, E, f = None, df = None,df2 = None):
+def kalman_newton_recursive(y, mu0, S0, A, B, D, E, f = None, df = None,df2 = None):
     """
     One-pass Kalman recursive method described in J. Humphrey et J. West, "Kalman filtering with Newton's method" 
     https://math.byu.edu/~jeffh/publications/papers/HW.pdf 
@@ -170,7 +225,7 @@ def kalman_newton_recursive(y, mu0, A, B, D, E, f = None, df = None,df2 = None):
         print("Linear solve...")
         
         # H = hessian(y, mu0, A, B, invD, invE, compressed=True),r,r
-        P = schur_diag(hessian(y, mu0, A, B, invD, invE, compressed=True),r,r)[r:2*r, r:2*r] # select bottom right block
+        P = np.linalg.inv(S0) 
         for t in tqdm.tqdm(range(1,T-1)):
            # idea is to define z[t,:] = np.vstack([z[t-1,:], A@q[t-1,:]]) 
            # so grad_z[t] = np.vstack([0, B.T@invD@(B@A@q[t,:]-y[t,:])])
@@ -186,5 +241,7 @@ def kalman_newton_recursive(y, mu0, A, B, D, E, f = None, df = None,df2 = None):
     #else: 
         # to be done, gradient is less straightforward
     return q
+    
+
     
     

@@ -147,7 +147,8 @@ def ensemble_kalman_smoother_pupil(
 
     # Measurement function
     C = np.asarray(
-        [[0, 1, 0], [-.5, 0, 1], [0, 1, 0], [.5, 0, 1], [.5, 1, 0], [0, 0, 1], [-.5, 1, 0],
+        [[0, 1, 0], [-.5, 0, 1], [0, 1,
+                                  0], [.5, 0, 1], [.5, 1, 0], [0, 0, 1], [-.5, 1, 0],
          [0, 0, 1]])
 
     # placeholder diagonal matrix for ensemble variance
