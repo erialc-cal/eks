@@ -62,7 +62,7 @@ def hessian(y, mu0, S0, A, B, invD, invE, f = None, df = None, df2 = None, compr
             bigH[r*(i+1):r*(i+2), r*i:r*(i+1)] = H[:r,r:2*r] # superdiagonal
             bigH[r*i:r*(i+1), r*(i+1):3*(i+2)] = H[r:2*r,:r] # subdiagonal
         bigH[:r,:r] = np.linalg.inv(S0)+ A.T@invE@A
-        bigH[T-2*r:T,T-2*r:T] = H
+        bigH[T-r:,T-r:] = invE + B.T @ invD @ B
         print("Full matrix of size T by T")
         return bigH
     
