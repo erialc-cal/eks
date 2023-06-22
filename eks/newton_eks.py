@@ -3,7 +3,6 @@ import os
 import pandas as pd
 import sys
 from eks.utils import convert_lp_dlc
-from eks.multiview_pca_smoother import ensemble_kalman_smoother_multi_cam
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -186,7 +185,7 @@ def kalman_newton_recursive(y, mu0, S0, A, B, ensemble_vars, E, f = None, df = N
         print("Linear solve...")
         
         P = np.linalg.inv(S0) 
-        for t in tqdm.tqdm(range(1,T-1)):
+        for t in range(1,T-1):
             D = np.diag(ensemble_vars[t])
             invD = np.linalg.inv(D)
             P = np.linalg.inv(np.linalg.inv(E+A@P@A.T)+B.T@invD@B)

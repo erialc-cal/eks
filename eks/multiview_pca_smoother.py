@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 from sklearn.decomposition import PCA
+from eks.newton_eks import *
 from eks.utils import make_dlc_pandas_index
 from eks.ensemble_kalman import ensemble, filtering_pass, kalman_dot, smooth_backward
 
@@ -460,6 +461,166 @@ def ensemble_kalman_smoother_multi_cam(
     # Smoothed posterior over y
     y_m_smooth = np.dot(C, ms.T).T
     y_v_smooth = np.swapaxes(np.dot(C, np.dot(Vs, C.T)), 0, 1)
+
+    # --------------------------------------
+    # final cleanup
+    # --------------------------------------
+    pdindex = make_dlc_pandas_index([keypoint_ensemble])
+    camera_indices = []
+    for camera in range(num_cameras):
+        camera_indices.append([camera*2, camera*2+1])
+ 
+    camera_dfs = {}
+    for camera, camera_name in enumerate(camera_names):
+        var = np.empty(y_m_smooth.T[camera_indices[camera][0]].shape)
+        var[:] = np.nan
+        pred_arr = np.vstack([
+            y_m_smooth.T[camera_indices[camera][0]] + means_camera[camera_indices[camera][0]],
+            y_m_smooth.T[camera_indices[camera][1]] + means_camera[camera_indices[camera][1]],
+            var,
+        ]).T
+        camera_dfs[camera_name + '_df'] = pd.DataFrame(pred_arr, columns=pdindex)
+
+    return camera_dfs
+
+
+
+
+
+
+# -----------------------
+# funcs for mirror-mouse
+# -----------------------
+def eks_opti_smoother_multi_cam(
+        markers_list_cameras, keypoint_ensemble, smooth_param, quantile_keep_pca, camera_names):
+    """Use multi-view constraints to fit a 3d latent subspace for each body part.
+
+    Parameters
+    ----------
+    markers_list_cameras : list of list of pd.DataFrames
+        each list element is a list of dataframe predictions from one ensemble member for each camera.
+    keypoint_ensemble : str
+        the name of the keypoint to be ensembled and smoothed
+    smooth_param : float
+        ranges from .01-2 (smaller values = more smoothing)
+    quantile_keep_pca
+        percentage of the points are kept for multi-view PCA (lowest ensemble variance)
+    camera_names: list
+        the camera names (should be the same length as markers_list_cameras).
+
+    Returns
+    -------
+
+    Returns
+    -------
+    dict
+        markers_df: dataframe containing smoothed markers; same format as input dataframes
+        latents_df: dataframe containing 3d latents: multiview PCA
+
+    """
+
+    # --------------------------------------------------------------
+    # interpolate right cam markers to left cam timestamps
+    # --------------------------------------------------------------
+    num_cameras = len(camera_names)
+    markers_list_stacked_interp = []
+    markers_list_interp = [[] for i in range(num_cameras)]
+    for model_id in range(len(markers_list_cameras[0])):
+        bl_markers_curr = []
+        camera_markers_curr = [[] for i in range(num_cameras)]
+        for i in range(markers_list_cameras[0][0].shape[0]):
+            curr_markers = []
+            for camera in range(num_cameras):
+                markers = np.array(markers_list_cameras[camera][model_id].to_numpy()[i, [0, 1]])
+                camera_markers_curr[camera].append(markers)
+                curr_markers.append(markers)
+            bl_markers_curr.append(np.concatenate(curr_markers)) #combine predictions for both cameras
+        markers_list_stacked_interp.append(bl_markers_curr)
+        for camera in range(num_cameras):
+            markers_list_interp[camera].append(camera_markers_curr[camera])
+    markers_list_stacked_interp = np.asarray(markers_list_stacked_interp)
+    markers_list_interp = np.asarray(markers_list_interp)
+    
+    keys = [keypoint_ensemble+'_x', keypoint_ensemble+'_y']
+    markers_list_cams = [[] for i in range(num_cameras)]
+    for k in range(len(markers_list_interp[0])):
+        for camera in range(num_cameras):
+            markers_cam = pd.DataFrame(markers_list_interp[camera][k], columns = keys)
+            markers_list_cams[camera].append(markers_cam)
+            
+    #compute ensemble median for each camera
+    cam_ensemble_preds = []
+    cam_ensemble_vars = []
+    cam_ensemble_stacks = []
+    cam_keypoints_mean_dict = []
+    cam_keypoints_var_dict = []
+    cam_keypoints_stack_dict = []
+    for camera in range(num_cameras):
+        cam_ensemble_preds_curr, cam_ensemble_vars_curr, cam_ensemble_stacks_curr, cam_keypoints_mean_dict_curr, cam_keypoints_var_dict_curr, cam_keypoints_stack_dict_curr = ensemble(markers_list_cams[camera], keys)
+        cam_ensemble_preds.append(cam_ensemble_preds_curr)
+        cam_ensemble_vars.append(cam_ensemble_vars_curr)
+        cam_ensemble_stacks.append(cam_ensemble_stacks_curr)
+        cam_keypoints_mean_dict.append(cam_keypoints_mean_dict_curr)
+        cam_keypoints_var_dict.append(cam_keypoints_var_dict_curr)
+        cam_keypoints_stack_dict.append(cam_keypoints_stack_dict_curr)
+        
+    #filter by low ensemble variances
+    hstacked_vars = np.hstack(cam_ensemble_vars)
+    max_vars = np.max(hstacked_vars,1)
+    quantile_keep = quantile_keep_pca
+    good_frames = np.where(max_vars <= np.percentile(max_vars, quantile_keep))[0]
+
+    good_cam_ensemble_preds = []
+    good_cam_ensemble_vars = []
+    for camera in range(num_cameras):
+        good_cam_ensemble_preds.append(cam_ensemble_preds[camera][good_frames])
+        good_cam_ensemble_vars.append(cam_ensemble_vars[camera][good_frames])
+
+    good_ensemble_preds = np.hstack(good_cam_ensemble_preds)
+    good_ensemble_vars = np.hstack(good_cam_ensemble_vars)
+    means_camera = []
+    for i in range(good_ensemble_preds.shape[1]):
+        means_camera.append(good_ensemble_preds[:,i].mean())
+
+    ensemble_preds = np.hstack(cam_ensemble_preds)
+    ensemble_vars = np.hstack(cam_ensemble_vars)
+    ensemble_stacks = np.concatenate(cam_ensemble_stacks,2)
+    scaled_ensemble_stacks = remove_camera_means(ensemble_stacks, means_camera)
+
+    good_scaled_ensemble_preds = remove_camera_means(good_ensemble_preds[None,:,:], means_camera)[0]
+    ensemble_pca, ensemble_ex_var = pca(good_scaled_ensemble_preds, 3)
+
+    scaled_ensemble_preds = remove_camera_means(ensemble_preds[None,:,:], means_camera)[0]
+    ensemble_pcs = ensemble_pca.transform(scaled_ensemble_preds)
+    good_ensemble_pcs = ensemble_pcs[good_frames]
+
+    y_obs = scaled_ensemble_preds
+    
+    #compute center of mass
+    #latent variables (observed)
+    good_z_t_obs = good_ensemble_pcs #latent variables - true 3D pca
+
+    ##### Set values for kalman filter #####
+    m0 = np.asarray([0.0, 0.0, 0.0]) # initial state: mean
+    S0 =  np.asarray([[np.var(good_z_t_obs[:,0]), 0.0, 0.0], [0.0, np.var(good_z_t_obs[:,1]), 0.0], [0.0, 0.0, np.var(good_z_t_obs[:,2])]]) # diagonal: var
+
+    A = np.asarray([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]) #state-transition matrix,
+    # Q = np.asarray([[10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]]) #state covariance matrix?????
+    d_t = good_z_t_obs[1:] - good_z_t_obs[:-1]
+
+    E = smooth_param*np.cov(d_t.T)
+
+    B = ensemble_pca.components_.T # Measurement function is inverse transform of PCA
+    D = np.eye(ensemble_pca.components_.shape[1]) # placeholder diagonal matrix for ensemble variance
+    
+    # --------------------------------------
+    # Run EKS opti
+    # --------------------------------------
+    ms = kalman_newton_recursive(y_obs, m0, S0, A, B, ensemble_vars, E)
+
+    # Smoothed posterior over y
+    y_m_smooth = np.dot(B, ms.T).T
+
 
     # --------------------------------------
     # final cleanup
