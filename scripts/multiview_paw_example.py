@@ -8,7 +8,7 @@ import pandas as pd
 from eks.utils import convert_lp_dlc
 from eks.multiview_pca_smoother import ensemble_kalman_smoother_paw_asynchronous
 from eks.multiview_pca_smoother import eks_opti_smoother_paw_asynchronous
-
+from eks.newton_eks import opti_plots
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -71,6 +71,7 @@ timestamps_right = None
 filenames = os.listdir(csv_dir)
 for filename in filenames:
     if 'timestamps' not in filename:
+        
         markers_curr = pd.read_csv(os.path.join(csv_dir, filename), header=[0, 1, 2], index_col=0)
         keypoint_names = [c[1] for c in markers_curr.columns[::3]]
         model_name = markers_curr.columns[0][0]
@@ -91,9 +92,9 @@ for filename in filenames:
             markers_list_right.append(markers_curr_fmt)
     else:
         if 'left' in filename:
-            timestamps_left = np.load(os.path.join(csv_dir, filename))
+            timestamps_left = np.load(os.path.join(csv_dir, filename), allow_pickle=True)
         else:
-            timestamps_right = np.load(os.path.join(csv_dir, filename))
+            timestamps_right = np.load(os.path.join(csv_dir, filename),allow_pickle=True)
 
 # file checks
 if timestamps_left is None or timestamps_right is None:
@@ -120,11 +121,7 @@ if eks_version == "opti":
         save_file = os.path.join(save_dir, f'eks_opti_smoothed_paw_traces.{view}.csv')
         df_dicts[f'{view}_df'].to_csv(save_file)
         
-    new_eks = pd.read_csv("/Users/clairehe/Documents/GitHub/eks/data/mirror-mouse/output/eks_opti.csv", header=[0,1,2], index_col=0)
-    ref_eks = pd.read_csv("/Users/clairehe/Documents/GitHub/eks/data/mirror-mouse/output/eks.csv",header=[0,1,2], index_col=0)
-    y_test = new_eks["ensemble-kalman_tracker"]["paw2LF_bot"]["x"]
-    y = ref_eks["ensemble-kalman_tracker"]["paw2LF_bot"]["x"]
-    opti_plots(y_test, y)
+
     
 else:
     df_dicts = ensemble_kalman_smoother_paw_asynchronous(
