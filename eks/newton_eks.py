@@ -159,3 +159,11 @@ def latent_plots(q_test, q, mean_array, n=200):
         ax[i].plot(q_test[:,i]+a, "--",color="green", label="test eks")
     plt.legend()
     plt.suptitle("latent predictions on pupil data")
+    
+def opti_plots(y_test, y, n=200):
+    fig, ax = plt.subplots(3,1,figsize=(20,12))
+    for i in range(3):
+        ax[i].plot(y, "-.",color="grey", label="reference eks")
+        ax[i].plot(y_test, "--",color="green", label="test eks")
+    plt.legend()
+    plt.suptitle("Truth predictions on pupil data")

@@ -8,7 +8,7 @@ import pandas as pd
 from eks.multiview_pca_smoother import eks_opti_smoother_multi_cam
 from eks.utils import convert_lp_dlc
 from eks.multiview_pca_smoother import ensemble_kalman_smoother_multi_cam
-
+from newton_eks import opti_plots
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -132,7 +132,11 @@ for keypoint_ensemble in bodypart_list:
                 src_cols = ('ensemble-kalman_tracker', f'{keypoint_ensemble}', coord)
                 dst_cols = ('ensemble-kalman_tracker', f'{keypoint_ensemble}_{camera}', coord)
                 markers_eks.loc[:, dst_cols] = df_tmp.loc[:, src_cols]
-
+        new_eks = pd.read_csv("/Users/clairehe/Documents/GitHub/eks/data/mirror-mouse/output/eks_opti.csv", header=[0,1,2], index_col=0)
+        ref_eks = pd.read_csv("/Users/clairehe/Documents/GitHub/eks/data/mirror-mouse/output/eks.csv",header=[0,1,2], index_col=0)
+        y_test = new_eks["ensemble-kalman_tracker"]["paw2LF_bot"]["x"]
+        y = ref_eks["ensemble-kalman_tracker"]["paw2LF_bot"]["x"]
+        opti_plots(y_test, y)
     # save eks results
         markers_eks.to_csv(os.path.join(save_dir, 'eks_opti.csv'))
 
@@ -188,8 +192,13 @@ for ax, coord in zip(axes, ['x', 'y', 'likelihood']):
 
 plt.suptitle(f'EKS results for {kp} ({cam} view)', fontsize=14)
 plt.tight_layout()
-
-save_file = os.path.join(save_dir, 'example_eks_result.pdf')
-plt.savefig(save_file)
-plt.close()
-print(f'see example EKS output at {save_file}')
+if eks_version == "opti":
+    save_file = os.path.join(save_dir, 'example_eks_opti_result.pdf')
+    plt.savefig(save_file)
+    plt.close()
+    print(f'see example EKS opti output at {save_file}')
+else:
+    save_file = os.path.join(save_dir, 'example_eks_result.pdf')
+    plt.savefig(save_file)
+    plt.close()
+    print(f'see example EKS output at {save_file}')

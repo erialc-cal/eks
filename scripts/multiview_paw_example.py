@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
-
 from eks.utils import convert_lp_dlc
 from eks.multiview_pca_smoother import ensemble_kalman_smoother_paw_asynchronous
+from eks.multiview_pca_smoother import eks_opti_smoother_paw_asynchronous
 
 
 parser = argparse.ArgumentParser()
@@ -115,6 +115,17 @@ if eks_version == "opti":
         smooth_param=s,
         quantile_keep_pca=quantile_keep_pca,
     )
+        # save smoothed markers from each view
+    for view in ['left', 'right']:
+        save_file = os.path.join(save_dir, f'eks_opti_smoothed_paw_traces.{view}.csv')
+        df_dicts[f'{view}_df'].to_csv(save_file)
+        
+    new_eks = pd.read_csv("/Users/clairehe/Documents/GitHub/eks/data/mirror-mouse/output/eks_opti.csv", header=[0,1,2], index_col=0)
+    ref_eks = pd.read_csv("/Users/clairehe/Documents/GitHub/eks/data/mirror-mouse/output/eks.csv",header=[0,1,2], index_col=0)
+    y_test = new_eks["ensemble-kalman_tracker"]["paw2LF_bot"]["x"]
+    y = ref_eks["ensemble-kalman_tracker"]["paw2LF_bot"]["x"]
+    opti_plots(y_test, y)
+    
 else:
     df_dicts = ensemble_kalman_smoother_paw_asynchronous(
     markers_list_left_cam=markers_list_left,
@@ -124,14 +135,12 @@ else:
     keypoint_names=keypoint_names,
     smooth_param=s,
     quantile_keep_pca=quantile_keep_pca,
-)
+    )
 
-
-
-# save smoothed markers from each view
-for view in ['left', 'right']:
-    save_file = os.path.join(save_dir, f'kalman_smoothed_paw_traces.{view}.csv')
-    df_dicts[f'{view}_df'].to_csv(save_file)
+    # save smoothed markers from each view
+    for view in ['left', 'right']:
+        save_file = os.path.join(save_dir, f'kalman_smoothed_paw_traces.{view}.csv')
+        df_dicts[f'{view}_df'].to_csv(save_file)
 
 
 # ---------------------------------------------
@@ -166,8 +175,13 @@ for ax, coord in zip(axes, ['x', 'y', 'likelihood']):
 
 plt.suptitle(f'EKS results for {kp} ({view} view)', fontsize=14)
 plt.tight_layout()
-
-save_file = os.path.join(save_dir, 'example_eks_result.pdf')
-plt.savefig(save_file)
-plt.close()
-print(f'see example EKS output at {save_file}')
+if eks_version=="opti":
+    save_file = os.path.join(save_dir, 'example_eks_opti_result.pdf')
+    plt.savefig(save_file)
+    plt.close()
+    print(f'see example EKS output at {save_file}')
+else:
+    save_file = os.path.join(save_dir, 'example_eks_result.pdf')
+    plt.savefig(save_file)
+    plt.close()
+    print(f'see example EKS output at {save_file}')
