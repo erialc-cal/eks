@@ -35,6 +35,12 @@ parser.add_argument(
     default=25,
     type=float,
 )
+parser.add_argument(
+    '--eks_version',
+    required=True,
+    help='choose eks version: optimisation based or standard em',
+    type=str,
+)
 args = parser.parse_args()
 
 # collect user-provided args
@@ -42,6 +48,7 @@ csv_dir = os.path.abspath(args.csv_dir)
 save_dir = args.save_dir
 s = args.s
 quantile_keep_pca = args.quantile_keep_pca
+eks_version = args.eks_version
 
 
 # ---------------------------------------------
@@ -97,7 +104,19 @@ if len(markers_list_right) != len(markers_list_left) or len(markers_list_left) =
         'There must be the same number of left and right camera models and >=1 model for each.')
 
 # run eks
-df_dicts = ensemble_kalman_smoother_paw_asynchronous(
+    # run eks
+if eks_version == "opti":
+    df_dicts = eks_opti_smoother_paw_asynchronous(
+        markers_list_left_cam=markers_list_left,
+        markers_list_right_cam=markers_list_right,
+        timestamps_left_cam=timestamps_left,
+        timestamps_right_cam=timestamps_right,
+        keypoint_names=keypoint_names,
+        smooth_param=s,
+        quantile_keep_pca=quantile_keep_pca,
+    )
+else:
+    df_dicts = ensemble_kalman_smoother_paw_asynchronous(
     markers_list_left_cam=markers_list_left,
     markers_list_right_cam=markers_list_right,
     timestamps_left_cam=timestamps_left,
@@ -106,6 +125,8 @@ df_dicts = ensemble_kalman_smoother_paw_asynchronous(
     smooth_param=s,
     quantile_keep_pca=quantile_keep_pca,
 )
+
+
 
 # save smoothed markers from each view
 for view in ['left', 'right']:

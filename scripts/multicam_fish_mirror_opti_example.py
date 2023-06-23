@@ -41,7 +41,7 @@ for session in sessions:
         # extract all markers
         markers_list = []
         for model_dir in model_dirs:
-            if model_dir != ".DS_Store"
+            if model_dir != ".DS_Store":
                 csv_file = os.path.join(model_dir, session, frame)
                 df_tmp = pd.read_csv(csv_file, header=[0, 1, 2], index_col=0)
                 keypoint_names = [l[1] for l in df_tmp.columns[::3]]

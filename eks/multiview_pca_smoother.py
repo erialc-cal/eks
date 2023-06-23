@@ -616,8 +616,8 @@ def eks_opti_smoother_multi_cam(
     # --------------------------------------
     # Run EKS opti
     # --------------------------------------
-    ms = kalman_newton_recursive(y_obs, m0, S0, A, B, ensemble_vars, E)
-
+    ms, loss = kalman_newton_recursive(y_obs, m0, S0, A, B, ensemble_vars, E, max_iter = 10)
+    plt.plot(loss)
     # Smoothed posterior over y
     y_m_smooth = np.dot(B, ms.T).T
 

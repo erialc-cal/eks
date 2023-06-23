@@ -5,10 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
-
 from eks.utils import convert_lp_dlc
 from eks.pupil_smoother import ensemble_kalman_smoother_pupil
-
+from eks.pupil_smoother import eks_opti_smoother_pupil
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -35,12 +34,18 @@ parser.add_argument(
     default=.999,
     type=float
 )
+parser.add_argument(
+    '--eks_version',
+    required=True,
+    help='choose eks version: optimisation based or standard em',
+    type=str,
+)
 args = parser.parse_args()
 
 # collect user-provided args
 csv_dir = os.path.abspath(args.csv_dir)
 save_dir = args.save_dir
-
+eks_version = args.eks_version
 
 # ---------------------------------------------
 # run EKS algorithm
@@ -77,20 +82,36 @@ state_transition_matrix = np.asarray([
 print(f'Smoothing matrix: {state_transition_matrix}')
 
 # run eks
-df_dicts = ensemble_kalman_smoother_pupil(
-    markers_list=markers_list,
-    keypoint_names=keypoint_names,
-    tracker_name='ensemble-kalman_tracker',
-    state_transition_matrix=state_transition_matrix,
-)
+if eks_version=="opti":
+    df_dicts = eks_opti_smoother_pupil(
+        markers_list=markers_list,
+        keypoint_names=keypoint_names,
+        tracker_name='ensemble-kalman_tracker',
+        state_transition_matrix=state_transition_matrix,
+    )
+    save_file = os.path.join(save_dir, 'opti_eks_pupil_traces.csv')
+    print(f'saving smoothed predictions to {save_file }')
+    df_dicts['markers_df'].to_csv(save_file)
 
-save_file = os.path.join(save_dir, 'kalman_smoothed_pupil_traces.csv')
-print(f'saving smoothed predictions to {save_file }')
-df_dicts['markers_df'].to_csv(save_file)
+    save_file = os.path.join(save_dir, 'opti_eks_latents.csv')
+    print(f'saving latents to {save_file}')
+    df_dicts['latents_df'].to_csv(save_file)
+    
+else:
+    df_dicts = ensemble_kalman_smoother_pupil(
+        markers_list=markers_list,
+        keypoint_names=keypoint_names,
+        tracker_name='ensemble-kalman_tracker',
+        state_transition_matrix=state_transition_matrix,
+    )
 
-save_file = os.path.join(save_dir, 'kalman_smoothed_latents.csv')
-print(f'saving latents to {save_file}')
-df_dicts['latents_df'].to_csv(save_file)
+    save_file = os.path.join(save_dir, 'kalman_smoothed_pupil_traces.csv')
+    print(f'saving smoothed predictions to {save_file }')
+    df_dicts['markers_df'].to_csv(save_file)
+
+    save_file = os.path.join(save_dir, 'kalman_smoothed_latents.csv')
+    print(f'saving latents to {save_file}')
+    df_dicts['latents_df'].to_csv(save_file)
 
 
 # ---------------------------------------------

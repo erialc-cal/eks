@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
-
+from eks.multiview_pca_smoother import eks_opti_smoother_multi_cam
 from eks.utils import convert_lp_dlc
 from eks.multiview_pca_smoother import ensemble_kalman_smoother_multi_cam
 
@@ -47,6 +47,12 @@ parser.add_argument(
     default=25,
     type=float,
 )
+parser.add_argument(
+    '--eks_version',
+    required=True,
+    help='choose eks version: optimisation based or standard em',
+    type=str,
+)
 args = parser.parse_args()
 
 # collect user-provided args
@@ -57,7 +63,7 @@ num_cameras = len(camera_names)
 save_dir = args.save_dir
 s = args.s
 quantile_keep_pca = args.quantile_keep_pca
-
+eks_version = args.eks_version
 
 # ---------------------------------------------
 # run EKS algorithm
@@ -111,23 +117,43 @@ for keypoint_ensemble in bodypart_list:
             ]
             marker_list_by_cam[c].append(markers_curr[non_likelihood_keys])
     # run eks
-    cameras_df = ensemble_kalman_smoother_multi_cam(
+    if eks_version == "opti":
+        cameras_df = eks_opti_smoother_multi_cam(
+            markers_list_cameras=marker_list_by_cam,
+            keypoint_ensemble=keypoint_ensemble,
+            smooth_param=s,
+            quantile_keep_pca=quantile_keep_pca,
+            camera_names=camera_names,
+        )
+        # put results into new dataframe
+        for camera in camera_names:
+            df_tmp = cameras_df[f'{camera}_df']
+            for coord in ['x', 'y']:
+                src_cols = ('ensemble-kalman_tracker', f'{keypoint_ensemble}', coord)
+                dst_cols = ('ensemble-kalman_tracker', f'{keypoint_ensemble}_{camera}', coord)
+                markers_eks.loc[:, dst_cols] = df_tmp.loc[:, src_cols]
+
+    # save eks results
+        markers_eks.to_csv(os.path.join(save_dir, 'eks_opti.csv'))
+
+    else:
+        cameras_df = ensemble_kalman_smoother_multi_cam(
         markers_list_cameras=marker_list_by_cam,
         keypoint_ensemble=keypoint_ensemble,
         smooth_param=s,
         quantile_keep_pca=quantile_keep_pca,
         camera_names=camera_names,
     )
-    # put results into new dataframe
-    for camera in camera_names:
-        df_tmp = cameras_df[f'{camera}_df']
-        for coord in ['x', 'y']:
-            src_cols = ('ensemble-kalman_tracker', f'{keypoint_ensemble}', coord)
-            dst_cols = ('ensemble-kalman_tracker', f'{keypoint_ensemble}_{camera}', coord)
-            markers_eks.loc[:, dst_cols] = df_tmp.loc[:, src_cols]
+        # put results into new dataframe
+        for camera in camera_names:
+            df_tmp = cameras_df[f'{camera}_df']
+            for coord in ['x', 'y']:
+                src_cols = ('ensemble-kalman_tracker', f'{keypoint_ensemble}', coord)
+                dst_cols = ('ensemble-kalman_tracker', f'{keypoint_ensemble}_{camera}', coord)
+                markers_eks.loc[:, dst_cols] = df_tmp.loc[:, src_cols]
 
-# save eks results
-markers_eks.to_csv(os.path.join(save_dir, 'eks.csv'))
+    # save eks results
+        markers_eks.to_csv(os.path.join(save_dir, 'eks.csv'))
 
 
 # ---------------------------------------------

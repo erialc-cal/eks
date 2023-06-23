@@ -1,4 +1,4 @@
-scorer,eks-opti_tracker,eks-opti_tracker,eks-opti_tracker
+scorer,ensemble-kalman_tracker,ensemble-kalman_tracker,ensemble-kalman_tracker
 latent,diameter,com_x,com_y
 0,16.11796848887172,51.779255365371704,50.7247829220295
 1,19.159161363147966,54.883959533856924,50.82208288440554
