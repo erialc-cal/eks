@@ -43,25 +43,7 @@ def gradient_tridiag(y, m0, S0, A, B, E, ensemble_vars):
     return G
 
 
-def newton_tridiag(y, m0, S0, A, B, E, ensemble_vars, max_iter = 200, eps= 10e-6):
-    # initialisation
-    
-    r = m0.shape[0]
-    T = y.shape[0]
-    n = y.shape[1]
-    
-    q = np.zeros((T,r))
-    
-    for iter in range(max_iter):
-        S = Block_thomas_algo(y, m0, S0, A, B, E, ensemble_vars)
-        qnew = q+S
-        if np.linalg.norm(S,2)<eps:
-            return qnew
-        q = qnew
-    
-    return q
-    
-    
+
     
     
     
