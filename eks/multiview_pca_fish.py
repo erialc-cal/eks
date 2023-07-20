@@ -283,7 +283,6 @@ def filtering_pass_with_constraint(y, m0, S0, C, R, A, Q, ensemble_vars, D,L, ke
             y_minus_CAmf = y[k,i, :] - np.dot(C, np.dot(A, mf[k,i-1, :]))
            
             
-            
             if any(part in i for i in constrained_keypoints_graph):
                 # gradient terms
                 grad = gradient_distance(mf[:,i,:]@L, part, D, keypoint_ensemble_list, constrained_keypoints_graph)
